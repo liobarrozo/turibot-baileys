@@ -1,23 +1,21 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const http = require('http');
-const fs = require('fs');
 
-// =================================================================
-// 1. SERVIDOR FANTASMA (Para que Railway no te mate)
-// =================================================================
+
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
     res.writeHead(200);
-    res.end('Turibot (Baileys): Online y ligero.');
+    res.end('OK'); 
 });
 
 server.listen(PORT, () => {
-    console.log(`✅ [SERVER] Escuchando en puerto ${PORT}`);
+    console.log(`✅ [SERVER] Puerto ${PORT}`);
 });
 
 // =================================================================
-// 2. CONFIGURACIÓN Y DATOS
+// 2. CONFIGURACIÓN
 // =================================================================
 const OWNER_NUMBER = '5492615997309@s.whatsapp.net'; 
 const WEB_URL = 'https://wanderlust.turisuite.com';
@@ -31,60 +29,71 @@ const CATEGORIES = [
 
 const chatState = {};
 
+
+setInterval(() => {
+    const now = Date.now();
+    const cleanLimit = 4 * 60 * 60 * 1000; 
+    let deletedCount = 0;
+
+    for (const user in chatState) {
+        if (now - chatState[user].lastSeen > cleanLimit) {
+            delete chatState[user];
+            deletedCount++;
+        }
+    }
+    if (deletedCount > 0) console.log(`[MEMORIA] Se limpiaron ${deletedCount} usuarios inactivos.`);
+}, 60 * 60 * 1000); 
+
 // =================================================================
-// 3. LÓGICA DE CONEXIÓN (BAILEYS)
+// 3. CONEXIÓN
 // =================================================================
 
 async function connectToWhatsApp() {
-    // Baileys guarda la sesión en una carpeta 'auth_info_baileys'
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, 
+        printQRInTerminal: false,
+        logger: pino({ level: 'silent' }), 
         browser: ['Turibot', 'Chrome', '1.0.0'],
-        syncFullHistory: false 
+        syncFullHistory: false,
+        generateHighQualityLinkPreview: false, 
+        markOnlineOnConnect: false 
     });
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log('\n================ ESCANEA EL QR ABAJO ================\n');
+            console.log('\n================ ESCANEA EL QR ================');
             qrcode.generate(qr, { small: true }); 
-            console.log('\n=====================================================\n');
+            console.log('===============================================\n');
         }
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('❌ Conexión cerrada. Reconectando:', shouldReconnect);
-            if (shouldReconnect) {
-                connectToWhatsApp();
-            }
+            console.log(' Desconectado. Reconectando:', shouldReconnect);
+            if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('🚀 [BAILEYS] ¡CONEXIÓN EXITOSA! El bot está listo.');
+            console.log('[BAILEYS] Conectado y Optimizado.');
         }
     });
 
-    // Guardar credenciales cuando cambian
     sock.ev.on('creds.update', saveCreds);
 
     // =================================================================
-    // 4. LÓGICA DE MENSAJES
+    // 4. MENSAJES
     // =================================================================
-    sock.ev.on('messages.upsert', async ({ messages }) => {
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+
         const msg = messages[0];
+        if (!msg.message) return; 
+        if (msg.key.fromMe) return; 
 
-        if (!msg.message) return; // Si no hay mensaje, salir
-        if (msg.key.fromMe) return; // Ignorar mensajes propios
-
-        // DETECTAR TIPO DE MENSAJE (Texto simple o Extendido)
-        const tipo = Object.keys(msg.message)[0];
-        
-        // Ignorar estados (status@broadcast)
+        // Ignorar estados explícitamente
         if (msg.key.remoteJid === 'status@broadcast') return;
 
-        // Extraer el texto real (Baileys es un poco más complejo aquí que WPPConnect)
         const text = msg.message.conversation || 
                      msg.message.extendedTextMessage?.text || 
                      msg.message.imageMessage?.caption ||
@@ -95,56 +104,58 @@ async function connectToWhatsApp() {
         const user = msg.key.remoteJid;
         const cleanText = text.toLowerCase().trim();
         
-        console.log(`📩 [MSG] De: ${user} | Texto: ${cleanText}`);
+        console.log(`${user.split('@')[0]}: ${cleanText.substring(0, 20)}`);
 
-        // --- FUNCIONES DE AYUDA PARA ENVIAR ---
         const sendText = async (jid, txt) => {
             await sock.sendMessage(jid, { text: txt });
         };
 
         // --- PING ---
         if (cleanText === '!ping') {
-            await sendText(user, '🏓 Pong! (Baileys vLight)');
+            const memoryUsage = process.memoryUsage().rss / 1024 / 1024;
+            await sendText(user, `🏓 Pong! RAM: ${memoryUsage.toFixed(2)} MB`);
             return;
         }
 
         // --- GESTIÓN DE ESTADO ---
-        if (!chatState[user]) chatState[user] = { mode: 'bot', step: 'MAIN_MENU' };
+        // ⚡ Actualizamos el timestamp 'lastSeen' para que el limpiador no lo borre
+        if (!chatState[user]) {
+            chatState[user] = { mode: 'bot', step: 'MAIN_MENU', lastSeen: Date.now() };
+        } else {
+            chatState[user].lastSeen = Date.now();
+        }
 
         if (cleanText === 'bot on') {
             chatState[user].mode = 'bot';
             chatState[user].step = 'MAIN_MENU';
-            await sendText(user, '🤖 Turibot reactivado.');
+            await sendText(user, '🤖 Reactivado.');
             return;
         }
 
         if (chatState[user].mode === 'human') return;
 
-        // --- COMANDO VOLVER ---
+        // --- NAVEGACIÓN ---
         if (['volver', 'menu', 'inicio', '0'].includes(cleanText)) {
             chatState[user].step = 'MAIN_MENU';
             await sendText(user, `🔙 *Menú Principal*\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
             return;
         }
 
-        // --- MENÚS ---
-
-        // PASO 1: CATEGORÍAS
+        // --- MENÚS (Resumido para ahorrar caracteres en memoria) ---
         if (chatState[user].step === 'SELECT_CATEGORY') {
             const selection = parseInt(cleanText);
             if (!isNaN(selection) && selection > 0 && selection <= CATEGORIES.length) {
                 const cat = CATEGORIES[selection - 1];
                 await sendText(user, `✅ *${cat.label}*\n📝 ${cat.description}\n🔗 ${WEB_URL}/?category=${cat.id}\n\n_0 para volver._`);
             } else {
-                await sendText(user, '⚠️ Opción inválida. Envía el número o "0".');
+                await sendText(user, '⚠️ Opción inválida. Usa números o "0".');
             }
             return;
         }
 
-        // PASO 2: MENÚ PRINCIPAL
         if (chatState[user].step === 'MAIN_MENU') {
             if (['hola', 'buenas', 'turibot', 'menu'].some(w => cleanText.includes(w))) {
-                await sendText(user, `👋 ¡Hola! Bienvenido a *Wanderlust*.\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
+                await sendText(user, `👋 ¡Hola! *Wanderlust Turismo*.\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
                 return;
             }
 
@@ -152,7 +163,7 @@ async function connectToWhatsApp() {
                 chatState[user].step = 'SELECT_CATEGORY';
                 let menu = '🏔️ *Categorías:*\n';
                 CATEGORIES.forEach((cat, i) => { menu += `${i + 1}. ${cat.label}\n`; });
-                menu += '\nEnvía el número o *0* para volver.';
+                menu += '\nEnvía número o *0*.';
                 await sendText(user, menu);
                 return;
             }
@@ -169,18 +180,14 @@ async function connectToWhatsApp() {
 
             if (cleanText === '4') {
                 chatState[user].mode = 'human';
-                await sendText(user, '👨‍💻 He notificado a un asesor.');
-                
-                // Alerta al dueño
+                await sendText(user, '👨‍💻 Asesor notificado.');
                 if (!OWNER_NUMBER.includes('XXXX')) {
                     const cleanPhone = user.split('@')[0];
-                    await sendText(OWNER_NUMBER, `🔔 Alerta Humano: https://wa.me/${cleanPhone}`);
+                    await sendText(OWNER_NUMBER, `🔔 Alerta: https://wa.me/${cleanPhone}`);
                 }
                 return;
             }
         }
     });
 }
-
-// Iniciar
 connectToWhatsApp();
