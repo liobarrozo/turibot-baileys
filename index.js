@@ -41,29 +41,28 @@ async function connectToWhatsApp() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true, 
-        // Optimizaciones de red
+        printQRInTerminal: false, 
         browser: ['Turibot', 'Chrome', '1.0.0'],
         syncFullHistory: false 
     });
 
-    // Monitoreo de la conexión
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log('⚠️ ESCANEA EL QR ARRIBA (Usa la vista Raw si se ve feo)');
+            console.log('\n================ ESCANEA EL QR ABAJO ================\n');
+            qrcode.generate(qr, { small: true }); 
+            console.log('\n=====================================================\n');
         }
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('❌ Conexión cerrada debido a:', lastDisconnect.error, ', reconectando:', shouldReconnect);
-            
+            console.log('❌ Conexión cerrada. Reconectando:', shouldReconnect);
             if (shouldReconnect) {
                 connectToWhatsApp();
             }
         } else if (connection === 'open') {
-            console.log('🚀 [BAILEYS] Conectado exitosamente!');
+            console.log('🚀 [BAILEYS] ¡CONEXIÓN EXITOSA! El bot está listo.');
         }
     });
 
