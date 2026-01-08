@@ -1,0 +1,25 @@
+{
+  "name": "turibot-baileys",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liobarrozo/turibot-baileys.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/liobarrozo/turibot-baileys/issues"
+  },
+  "homepage": "https://github.com/liobarrozo/turibot-baileys#readme",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "http": "^0.0.1-security",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
