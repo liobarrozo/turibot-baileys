@@ -3,22 +3,13 @@ const qrcode = require('qrcode-terminal');
 const http = require('http');
 const fs = require('fs');
 
-// =================================================================
-// 1. SERVIDOR FANTASMA (Para que Railway no te mate)
-// =================================================================
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
     res.writeHead(200);
-    res.end('Turibot (Baileys): Online y ligero.');
+    res.end('Turibot: Online');
 });
+server.listen(PORT, () => console.log(`✅ Server en ${PORT}`));
 
-server.listen(PORT, () => {
-    console.log(`✅ [SERVER] Escuchando en puerto ${PORT}`);
-});
-
-// =================================================================
-// 2. CONFIGURACIÓN Y DATOS
-// =================================================================
 const OWNER_NUMBER = '5492615997309@s.whatsapp.net'; 
 const WEB_URL = 'https://wanderlust.turisuite.com';
 
@@ -29,44 +20,64 @@ const CATEGORIES = [
     { id: 'programas', label: '📋 Programas', description: 'Paquetes completos.' }
 ];
 
-const chatState = {};
+
+const chatState = {}; 
+
+setInterval(() => {
+    const now = Date.now();
+    const LIMIT = 30 * 60 * 1000; 
+    let deletedCount = 0;
+
+    Object.keys(chatState).forEach(user => {
+        if (now - chatState[user].lastInteraction > LIMIT) {
+            delete chatState[user];
+            deletedCount++;
+        }
+    });
+    
+    if (deletedCount > 0) {
+        if (global.gc) { global.gc(); } 
+        console.log(`🧹 [GC] Se eliminaron ${deletedCount} usuarios inactivos de la memoria.`);
+    }
+}, 30 * 60 * 1000);
 
 // =================================================================
-// 3. LÓGICA DE CONEXIÓN (BAILEYS)
+// 3. LÓGICA DE CONEXIÓN
 // =================================================================
+
+const msgRetryCounterCache = new Map();
 
 async function connectToWhatsApp() {
-    // Baileys guarda la sesión en una carpeta 'auth_info_baileys'
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, 
-        browser: ['Turibot', 'Chrome', '1.0.0'],
-        syncFullHistory: false 
+        printQRInTerminal: false,
+        // OPTIMIZACIÓN 3: Configuraciones de bajo consumo
+        syncFullHistory: false,      // Ya lo tenías, vital.
+        generateHighQualityLinkPreview: false, // AHORRA MUCHA RAM
+        markOnlineOnConnect: false,  // Ahorra un poco de proceso
+        msgRetryCounterCache,        // Gestión eficiente de reintentos
+        browser: ['Turibot_Lite', 'Chrome', '1.0.0'], 
     });
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log('\n================ ESCANEA EL QR ABAJO ================\n');
+            console.log('\n================ ESCANEA EL QR ================\n');
             qrcode.generate(qr, { small: true }); 
-            console.log('\n=====================================================\n');
         }
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('❌ Conexión cerrada. Reconectando:', shouldReconnect);
-            if (shouldReconnect) {
-                connectToWhatsApp();
-            }
+            console.log('❌ Desconectado. Reconectando:', shouldReconnect);
+            if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('🚀 [BAILEYS] ¡CONEXIÓN EXITOSA! El bot está listo.');
+            console.log('🚀 [BAILEYS] Conectado y optimizado.');
         }
     });
 
-    // Guardar credenciales cuando cambian
     sock.ev.on('creds.update', saveCreds);
 
     // =================================================================
@@ -74,42 +85,38 @@ async function connectToWhatsApp() {
     // =================================================================
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const msg = messages[0];
-
-        if (!msg.message) return; // Si no hay mensaje, salir
-        if (msg.key.fromMe) return; // Ignorar mensajes propios
-
-        // DETECTAR TIPO DE MENSAJE (Texto simple o Extendido)
-        const tipo = Object.keys(msg.message)[0];
-        
-        // Ignorar estados (status@broadcast)
+        if (!msg.message || msg.key.fromMe) return;
         if (msg.key.remoteJid === 'status@broadcast') return;
 
-        // Extraer el texto real (Baileys es un poco más complejo aquí que WPPConnect)
         const text = msg.message.conversation || 
                      msg.message.extendedTextMessage?.text || 
-                     msg.message.imageMessage?.caption ||
-                     '';
+                     msg.message.imageMessage?.caption || '';
         
         if (!text) return;
 
         const user = msg.key.remoteJid;
         const cleanText = text.toLowerCase().trim();
         
-        console.log(`📩 [MSG] De: ${user} | Texto: ${cleanText}`);
+        // ACTUALIZAR ESTADO Y TIMESTAMP
+        // Si no existe, lo crea. Si existe, actualiza el tiempo.
+        if (!chatState[user]) {
+            chatState[user] = { mode: 'bot', step: 'MAIN_MENU', lastInteraction: Date.now() };
+        } else {
+            chatState[user].lastInteraction = Date.now();
+        }
 
-        // --- FUNCIONES DE AYUDA PARA ENVIAR ---
         const sendText = async (jid, txt) => {
             await sock.sendMessage(jid, { text: txt });
         };
 
-        // --- PING ---
+        // --- COMANDOS ---
+
         if (cleanText === '!ping') {
-            await sendText(user, '🏓 Pong! (Baileys vLight)');
+            // Monitor de memoria RAM en tiempo real
+            const used = process.memoryUsage().rss / 1024 / 1024;
+            await sendText(user, `🏓 Pong!\n🧠 RAM: ${Math.round(used * 100) / 100} MB`);
             return;
         }
-
-        // --- GESTIÓN DE ESTADO ---
-        if (!chatState[user]) chatState[user] = { mode: 'bot', step: 'MAIN_MENU' };
 
         if (cleanText === 'bot on') {
             chatState[user].mode = 'bot';
@@ -120,16 +127,13 @@ async function connectToWhatsApp() {
 
         if (chatState[user].mode === 'human') return;
 
-        // --- COMANDO VOLVER ---
         if (['volver', 'menu', 'inicio', '0'].includes(cleanText)) {
             chatState[user].step = 'MAIN_MENU';
             await sendText(user, `🔙 *Menú Principal*\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
             return;
         }
 
-        // --- MENÚS ---
-
-        // PASO 1: CATEGORÍAS
+        // --- FLUJO DEL BOT ---
         if (chatState[user].step === 'SELECT_CATEGORY') {
             const selection = parseInt(cleanText);
             if (!isNaN(selection) && selection > 0 && selection <= CATEGORIES.length) {
@@ -141,7 +145,6 @@ async function connectToWhatsApp() {
             return;
         }
 
-        // PASO 2: MENÚ PRINCIPAL
         if (chatState[user].step === 'MAIN_MENU') {
             if (['hola', 'buenas', 'turibot', 'menu'].some(w => cleanText.includes(w))) {
                 await sendText(user, `👋 ¡Hola! Bienvenido a *Wanderlust*.\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
@@ -171,7 +174,6 @@ async function connectToWhatsApp() {
                 chatState[user].mode = 'human';
                 await sendText(user, '👨‍💻 He notificado a un asesor.');
                 
-                // Alerta al dueño
                 if (!OWNER_NUMBER.includes('XXXX')) {
                     const cleanPhone = user.split('@')[0];
                     await sendText(OWNER_NUMBER, `🔔 Alerta Humano: https://wa.me/${cleanPhone}`);
@@ -182,5 +184,4 @@ async function connectToWhatsApp() {
     });
 }
 
-// Iniciar
 connectToWhatsApp();
