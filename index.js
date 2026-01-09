@@ -3,6 +3,9 @@ const qrcode = require('qrcode-terminal');
 const http = require('http');
 const fs = require('fs');
 
+// =================================================================
+// 1. SERVIDOR FANTASMA
+// =================================================================
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
     res.writeHead(200);
@@ -10,6 +13,9 @@ const server = http.createServer((req, res) => {
 });
 server.listen(PORT, () => console.log(`✅ Server en ${PORT}`));
 
+// =================================================================
+// 2. CONFIGURACIÓN Y DATOS
+// =================================================================
 const OWNER_NUMBER = '5492615543675@s.whatsapp.net'; 
 const WEB_URL = 'https://wanderlust.turisuite.com';
 
@@ -20,9 +26,9 @@ const CATEGORIES = [
     { id: 'programas', label: '📋 Programas', description: 'Paquetes completos.' }
 ];
 
-
 const chatState = {}; 
 
+// GC: Limpieza de memoria cada 30 min
 setInterval(() => {
     const now = Date.now();
     const LIMIT = 30 * 60 * 1000; 
@@ -37,7 +43,7 @@ setInterval(() => {
     
     if (deletedCount > 0) {
         if (global.gc) { global.gc(); } 
-        console.log(`🧹 [GC] Se eliminaron ${deletedCount} usuarios inactivos de la memoria.`);
+        console.log(`🧹 [GC] Se eliminaron ${deletedCount} usuarios inactivos.`);
     }
 }, 30 * 60 * 1000);
 
@@ -53,11 +59,10 @@ async function connectToWhatsApp() {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        // OPTIMIZACIÓN 3: Configuraciones de bajo consumo
-        syncFullHistory: false,      // Ya lo tenías, vital.
-        generateHighQualityLinkPreview: false, // AHORRA MUCHA RAM
-        markOnlineOnConnect: false,  // Ahorra un poco de proceso
-        msgRetryCounterCache,        // Gestión eficiente de reintentos
+        syncFullHistory: false,      
+        generateHighQualityLinkPreview: false, 
+        markOnlineOnConnect: false,
+        msgRetryCounterCache,        
         browser: ['Turibot_Lite', 'Chrome', '1.0.0'], 
     });
 
@@ -95,10 +100,12 @@ async function connectToWhatsApp() {
         if (!text) return;
 
         const user = msg.key.remoteJid;
+        // OBTENEMOS EL NOMBRE DEL USUARIO (O 'Usuario' si no tiene)
+        const userName = msg.pushName || 'Usuario'; 
+        
         const cleanText = text.toLowerCase().trim();
         
-        // ACTUALIZAR ESTADO Y TIMESTAMP
-        // Si no existe, lo crea. Si existe, actualiza el tiempo.
+        // ACTUALIZAR ESTADO
         if (!chatState[user]) {
             chatState[user] = { mode: 'bot', step: 'MAIN_MENU', lastInteraction: Date.now() };
         } else {
@@ -112,7 +119,6 @@ async function connectToWhatsApp() {
         // --- COMANDOS ---
 
         if (cleanText === '!ping') {
-            // Monitor de memoria RAM en tiempo real
             const used = process.memoryUsage().rss / 1024 / 1024;
             await sendText(user, `🏓 Pong!\n🧠 RAM: ${Math.round(used * 100) / 100} MB`);
             return;
@@ -147,7 +153,7 @@ async function connectToWhatsApp() {
 
         if (chatState[user].step === 'MAIN_MENU') {
             if (['hola', 'buenas', 'turibot', 'menu'].some(w => cleanText.includes(w))) {
-                await sendText(user, `👋 ¡Hola! Bienvenido a *Wanderlust*.\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
+                await sendText(user, `👋 ¡Hola ${userName}! Bienvenido a *Wanderlust*.\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
                 return;
             }
 
@@ -170,13 +176,14 @@ async function connectToWhatsApp() {
                 return;
             }
 
+            // --- OPCIÓN 4 MODIFICADA ---
             if (cleanText === '4') {
                 chatState[user].mode = 'human';
-                await sendText(user, '👨‍💻 He notificado a un asesor.');
+                await sendText(user, '👨‍💻 He notificado a un asesor. Te responderán pronto.');
                 
                 if (!OWNER_NUMBER.includes('XXXX')) {
-                    const cleanPhone = user.split('@')[0];
-                    await sendText(OWNER_NUMBER, `🔔 Alerta Humano: https://wa.me/${cleanPhone}`);
+                    // Mensaje limpio con Nombre y Nota para revisar
+                    await sendText(OWNER_NUMBER, `🔔 *Solicitud de Asesor*\n\n👤 *Cliente:* ${userName}\nℹ️ *Nota:* Por favor revisa el mensaje para contestarle.`);
                 }
                 return;
             }
