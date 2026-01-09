@@ -10,7 +10,7 @@ const server = http.createServer((req, res) => {
 });
 server.listen(PORT, () => console.log(`✅ Server en ${PORT}`));
 
-const OWNER_NUMBER = '5492615997309@s.whatsapp.net'; 
+const OWNER_NUMBER = '5492615543675@s.whatsapp.net'; 
 const WEB_URL = 'https://wanderlust.turisuite.com';
 
 const CATEGORIES = [
