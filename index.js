@@ -100,7 +100,6 @@ async function connectToWhatsApp() {
         if (!text) return;
 
         const user = msg.key.remoteJid;
-        // OBTENEMOS EL NOMBRE DEL USUARIO (O 'Usuario' si no tiene)
         const userName = msg.pushName || 'Usuario'; 
         
         const cleanText = text.toLowerCase().trim();
@@ -135,7 +134,7 @@ async function connectToWhatsApp() {
 
         if (['volver', 'menu', 'inicio', '0'].includes(cleanText)) {
             chatState[user].step = 'MAIN_MENU';
-            await sendText(user, `🔙 *Menú Principal*\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
+            await sendText(user, `🔙 *Menú Principal*\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Quiero hablar con un sesor`);
             return;
         }
 
@@ -153,7 +152,7 @@ async function connectToWhatsApp() {
 
         if (chatState[user].step === 'MAIN_MENU') {
             if (['hola', 'buenas', 'turibot', 'menu'].some(w => cleanText.includes(w))) {
-                await sendText(user, `👋 ¡Hola ${userName}! Bienvenido a *Wanderlust*.\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Asesor`);
+                await sendText(user, `👋 ¡Hola ${userName}! Bienvenido a *Wanderlust*.\n\n1️⃣ Excursiones\n2️⃣ Ubicación\n3️⃣ Tips\n4️⃣ Quiero hablar con un asesor`);
                 return;
             }
 
@@ -179,10 +178,9 @@ async function connectToWhatsApp() {
             // --- OPCIÓN 4 MODIFICADA ---
             if (cleanText === '4') {
                 chatState[user].mode = 'human';
-                await sendText(user, '👨‍💻 He notificado a un asesor. Te responderán pronto.');
+                await sendText(user, '👨‍💻 He notificado a un asesor comercial. Te responderán pronto.');
                 
                 if (!OWNER_NUMBER.includes('XXXX')) {
-                    // Mensaje limpio con Nombre y Nota para revisar
                     await sendText(OWNER_NUMBER, `🔔 *Solicitud de Asesor*\n\n👤 *Cliente:* ${userName}\nℹ️ *Nota:* Por favor revisa el mensaje para contestarle.`);
                 }
                 return;
